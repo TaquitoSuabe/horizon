@@ -2066,14 +2066,32 @@ async fn open_device_with(
     allow_cpu: bool,
 ) -> Result<Opened> {
     let mut failures = Vec::new();
+    // 1. Try conformant adapters for each backend in order (e.g. Vulkan conformant -> OpenGL conformant).
     for (attempt, backends) in order.iter().copied().enumerate() {
         let name = backends_name(backends);
         if attempt > 0 {
             log::warn!("Horizon renderer: trying {name} ({})", failures.join("; "));
         }
-        match open_with_retry(backends, window, offscreen, layers, allow_cpu).await {
+        match open_backend(backends, window, offscreen, false, layers, allow_cpu).await {
             Ok(opened) => return Ok(opened),
-            Err(e) => failures.push(e),
+            Err(NoDevice::NoAdapter(e)) | Err(NoDevice::Failed(e)) => failures.push(e),
+        }
+    }
+    // 2. Fallback: if no conformant adapter was found on any backend, try non-conformant adapters in order.
+    for backends in order.iter().copied() {
+        let name = backends_name(backends);
+        log::warn!(
+            "Horizon renderer: no conformant adapter found; asking {name} for non-conformant adapters"
+        );
+        match open_backend(backends, window, offscreen, true, layers, allow_cpu).await {
+            Ok(opened) => {
+                log::warn!(
+                    "Horizon renderer: using {} although its driver reports no conformance version",
+                    opened.adapter.get_info().name
+                );
+                return Ok(opened);
+            }
+            Err(NoDevice::NoAdapter(e)) | Err(NoDevice::Failed(e)) => failures.push(e),
         }
     }
     Err(format!("{NO_GPU_DRIVER} ({})", failures.join("; ")).into())
@@ -2083,42 +2101,6 @@ async fn open_device_with(
 enum NoDevice {
     NoAdapter(String),
     Failed(String),
-}
-/// Opens a device on one backend, and on a backend whose adapters wgpu all hid
-/// for reporting no Vulkan conformance version tries it again with them shown:
-/// Mesa's hasvk drives Ivy Bridge and Haswell, works, and reports 0.0.0.0, so
-/// without this the player is told they have no graphics driver while Vulkan
-/// runs (a `gl not compatible with provided surface` fallback, or nothing, is
-/// all they get). Returns why the backend gave no device.
-async fn open_with_retry(
-    backends: wgpu::Backends,
-    window: &Arc<Window>,
-    offscreen: bool,
-    layers: u32,
-    allow_cpu: bool,
-) -> std::result::Result<Opened, String> {
-    match open_backend(backends, window, offscreen, false, layers, allow_cpu).await {
-        Err(NoDevice::NoAdapter(hidden)) => {
-            log::warn!(
-                "Horizon renderer: {} has no conformant adapter ({hidden}); asking again for the \
-                 ones wgpu hides as non-conformant",
-                backends_name(backends)
-            );
-            match open_backend(backends, window, offscreen, true, layers, allow_cpu).await {
-                Ok(opened) => {
-                    log::warn!(
-                        "Horizon renderer: using {} although its driver reports no Vulkan \
-                         conformance version",
-                        opened.adapter.get_info().name
-                    );
-                    Ok(opened)
-                }
-                Err(NoDevice::NoAdapter(e)) | Err(NoDevice::Failed(e)) => Err(e),
-            }
-        }
-        Err(NoDevice::Failed(e)) => Err(e),
-        Ok(opened) => Ok(opened),
-    }
 }
 /// Opens a device on `backends` alone: its surface, adapter and device, or what
 /// stopped it. `allow_nonconformant` is `open_with_retry`'s second try; a

@@ -149,7 +149,9 @@ impl Post {
         // The OpenGL backend's GLSL translator does not support textureLoad
         // from depth textures: on devices running through OpenGL (such as older
         // Intel GPUs on Linux), TAA cannot compile its pipeline.
-        let taa_resources = {
+        let taa_resources = if device.adapter_info().backend == wgpu::Backend::Gl {
+            None
+        } else {
             let taa_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Horizon TAA bindings"),
                 entries: &[
