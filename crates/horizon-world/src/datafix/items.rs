@@ -721,7 +721,7 @@ fn fix_display(s: &mut Stack, mut d: Tag, hide_flags: i32) -> Tag {
     if let Some(loc) = as_str(d.get("LocName")) {
         s.set_component(
             "minecraft:item_name",
-            Tag::String(JavaString(json::translatable_component_json(&loc))),
+            Tag::String(JavaString(json::translatable_component_json(&loc).into())),
         );
     }
     if s.is("minecraft:filled_map") {

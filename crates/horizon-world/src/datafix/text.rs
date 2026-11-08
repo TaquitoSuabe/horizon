@@ -68,7 +68,7 @@ fn legacy_hover_event(v: &mut Tag) {
             ("action", string("show_text")),
             (
                 "contents",
-                Tag::compound([("text", Tag::String(crate::nbt::JavaString(text)))]),
+                Tag::compound([("text", Tag::String(crate::nbt::JavaString(text.into())))]),
             ),
         ])
     };

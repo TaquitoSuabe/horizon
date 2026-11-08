@@ -545,7 +545,7 @@ mod tests {
                 ("properties", Tag::String("axis=y".into())),
             ]),
             materialized("test:log", &[("axis", Tag::Int(5))]),
-            Tag::String(JavaString(vec![0xd800])),
+            Tag::String(JavaString(vec![0xd800].into())),
             Tag::Compound(Compound::new()),
             // An unknown block name.
             state("minecraft:nope", &[]),
@@ -569,7 +569,7 @@ mod tests {
         assert_eq!(id(&state("test:log", &[("axis", "bogus")])), 3);
         assert_eq!(id(&state("test:door", &[("open", "true")])), 7);
         assert_eq!(id(&state("test:door", &[("facing", "east")])), 6);
-        assert_eq!(id(&Tag::String(JavaString(vec![0xd800]))), air);
+        assert_eq!(id(&Tag::String(JavaString(vec![0xd800].into()))), air);
     }
     #[test]
     fn saved_cache_is_bounded_and_registry_local_under_concurrency() {

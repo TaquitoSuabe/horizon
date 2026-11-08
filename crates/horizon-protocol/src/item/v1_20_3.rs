@@ -739,7 +739,7 @@ fn json_text(value: &Tag) -> Tag {
     let mut json = datafix::json::from_nbt(value);
     fix(&mut json);
     Tag::String(horizon_world::nbt::JavaString(
-        datafix::json::to_stable_string(&json),
+        datafix::json::to_stable_string(&json).into(),
     ))
 }
 fn uuid_tag(uuid: u128) -> Tag {
@@ -1303,7 +1303,7 @@ fn legacy_raw(tag: &mut Tag, kind: i32, bytes: &[u8]) -> Result<()> {
                     tag,
                     "BlockEntityTag",
                     "Lock",
-                    Tag::String(horizon_world::nbt::JavaString(name)),
+                    Tag::String(horizon_world::nbt::JavaString(name.into())),
                 );
             }
         }

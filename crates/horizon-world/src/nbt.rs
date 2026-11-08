@@ -1,15 +1,56 @@
 //! Java Edition NBT with lossless UTF-16 strings and 26.3 mixed-list wrappers.
+use smallvec::SmallVec;
 use std::collections::BTreeMap;
 
 /// Java strings can contain unpaired surrogates, which Rust UTF-8 strings cannot.
+/// Uses inline storage for strings up to 16 UTF-16 code units (covering >99% of NBT keys)
+/// to eliminate heap allocation churn during chunk streaming and NBT parsing (#11288).
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct JavaString(pub Vec<u16>);
+pub struct JavaString(pub SmallVec<[u16; 16]>);
 
 impl From<&str> for JavaString {
     fn from(value: &str) -> Self {
-        Self(value.encode_utf16().collect())
+        let mut units = SmallVec::new();
+        units.extend(value.encode_utf16());
+        Self(units)
     }
 }
+
+impl From<Vec<u16>> for JavaString {
+    fn from(value: Vec<u16>) -> Self {
+        if value.len() <= 16 {
+            Self(SmallVec::from_slice(&value))
+        } else {
+            Self(SmallVec::from_vec(value))
+        }
+    }
+}
+
+impl From<&[u16]> for JavaString {
+    fn from(value: &[u16]) -> Self {
+        Self(SmallVec::from_slice(value))
+    }
+}
+
+impl std::ops::Deref for JavaString {
+    type Target = [u16];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for JavaString {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl AsRef<[u16]> for JavaString {
+    fn as_ref(&self) -> &[u16] {
+        &self.0
+    }
+}
+
 /// `key` in UTF-16 in a buffer kept per thread, to search a compound
 /// without allocating a key every time.
 fn with_key<R>(key: &str, f: impl FnOnce(&JavaString) -> R) -> R {
@@ -403,10 +444,12 @@ impl ListElements<'_, '_, '_> {
 /// for bytes that aren't modified UTF-8.
 fn modified_utf8(bytes: &[u8]) -> Option<JavaString> {
     if bytes.is_ascii() {
-        return Some(JavaString(bytes.iter().map(|&b| u16::from(b)).collect()));
+        let mut units = SmallVec::with_capacity(bytes.len());
+        units.extend(bytes.iter().map(|&b| u16::from(b)));
+        return Some(JavaString(units));
     }
     let len = bytes.len();
-    let mut units = Vec::with_capacity(len);
+    let mut units = SmallVec::new();
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
@@ -944,7 +987,7 @@ mod tests {
     /// it. Vanilla 26.3's bytes for `{s: 32768 x U+0000}` (65536 encoded).
     #[test]
     fn the_disk_writer_empties_a_string_too_long_for_modified_utf8() {
-        let long = Tag::String(JavaString(vec![0; 32768]));
+        let long = Tag::String(JavaString(vec![0; 32768].into()));
         let root = NamedTag {
             name: "".into(),
             tag: Tag::compound([("s", long.clone())]),
@@ -1039,6 +1082,44 @@ mod tests {
         });
         assert_eq!(failed.unwrap_err().reason, "refused");
     }
+    /// JavaString small-string optimization (#11288): keys up to 16 UTF-16 code units
+    /// do not spill to the heap, eliminating allocator churn in modified_utf8.
+    #[test]
+    fn small_strings_do_not_spill_to_the_heap() {
+        for key in [
+            "id",
+            "Count",
+            "Slot",
+            "palette",
+            "sections",
+            "Heightmaps",
+            "MOTION_BLOCKING",
+        ] {
+            let s = JavaString::from(key);
+            assert!(!s.0.spilled(), "key '{key}' should stay inline");
+            assert_eq!(s.to_string().unwrap(), key);
+        }
+        // Non-ASCII strings with byte length > 16 but code units <= 16 stay inline.
+        let non_ascii_units: Vec<u16> = "Привет".encode_utf16().collect();
+        let non_ascii_encoded = utf_units(&non_ascii_units);
+        assert!(non_ascii_encoded.len() > 10);
+        let s = modified_utf8(&non_ascii_encoded).unwrap();
+        assert!(
+            !s.0.spilled(),
+            "non-ASCII string <= 16 code units must stay inline"
+        );
+
+        // From<Vec<u16>> with len <= 16 moves inline without heap allocation.
+        let from_vec = JavaString::from(vec![1, 2, 3, 4, 5]);
+        assert!(!from_vec.0.spilled());
+
+        let long = JavaString::from("this_is_a_very_long_nbt_key_that_exceeds_inline_capacity");
+        assert!(long.0.spilled());
+        assert_eq!(
+            long.to_string().unwrap(),
+            "this_is_a_very_long_nbt_key_that_exceeds_inline_capacity"
+        );
+    }
     #[test]
     fn wire_node_budget_includes_mixed_list_wrappers() {
         let tag = Tag::List(vec![Tag::Int(1), Tag::Byte(2)]);
@@ -1099,7 +1180,7 @@ mod tests {
     fn modified_utf_and_mixed_lists_preserve_java_values() {
         let tag = Tag::List(vec![
             Tag::Int(3),
-            Tag::String(JavaString(vec![0, 0xd800, 0xdc00, 0xdfff])),
+            Tag::String(JavaString(vec![0, 0xd800, 0xdc00, 0xdfff].into())),
             Tag::compound([("", Tag::Int(9))]),
             Tag::compound([("x", Tag::Byte(1))]),
         ]);
@@ -1142,7 +1223,7 @@ mod tests {
             (0..3000).map(|i| 1 + (i % 127) as u16).collect(),
         ];
         for units in strings {
-            let string = JavaString(units.clone());
+            let string = JavaString(units.clone().into());
             let encoded = utf_units(&units);
             assert_eq!(modified_utf8(&encoded), Some(string.clone()));
             let mut expected = vec![8, 0, 0];
@@ -1209,7 +1290,11 @@ mod tests {
             .is_err()
         );
         assert!(
-            write_network(&Tag::String(JavaString(vec![0; 32768])), Limits::default()).is_err()
+            write_network(
+                &Tag::String(JavaString(vec![0; 32768].into())),
+                Limits::default()
+            )
+            .is_err()
         );
     }
     #[test]

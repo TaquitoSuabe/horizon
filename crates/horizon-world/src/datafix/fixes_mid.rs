@@ -1616,7 +1616,8 @@ fn item_lore(cx: &mut Cx) {
         if let Tag::List(lines) = lore {
             for line in lines {
                 if let Tag::String(text) = line {
-                    *line = Tag::String(JavaString(super::json::text_component_json(&text.0)));
+                    *line =
+                        Tag::String(JavaString(super::json::text_component_json(&text.0).into()));
                 }
             }
         }

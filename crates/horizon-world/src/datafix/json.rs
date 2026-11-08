@@ -461,14 +461,14 @@ pub fn to_nbt(json: &Json) -> Option<Tag> {
     Some(match json {
         Json::Null => return None,
         Json::Bool(b) => Tag::Byte(i8::from(*b)),
-        Json::Str(s) => Tag::String(JavaString(s.clone())),
+        Json::Str(s) => Tag::String(JavaString(s.clone().into())),
         Json::Num(n) => number_to_nbt(n),
         Json::Arr(items) => Tag::List(items.iter().filter_map(to_nbt).collect()),
         Json::Obj(entries) => {
             let mut c = Compound::new();
             for (k, v) in entries {
                 if let Some(v) = to_nbt(v) {
-                    c.insert(JavaString(k.clone()), v);
+                    c.insert(JavaString(k.clone().into()), v);
                 }
             }
             Tag::Compound(c)
@@ -554,9 +554,9 @@ pub fn from_nbt(tag: &Tag) -> Json {
         ),
         Tag::IntArray(v) => Json::Arr(v.iter().map(|i| Json::Num(i.to_string())).collect()),
         Tag::LongArray(v) => Json::Arr(v.iter().map(|l| Json::Num(l.to_string())).collect()),
-        Tag::String(s) => Json::Str(s.0.clone()),
+        Tag::String(s) => Json::Str(s.0.to_vec()),
         Tag::List(items) => Json::Arr(items.iter().map(from_nbt).collect()),
-        Tag::Compound(c) => Json::Obj(c.iter().map(|(k, v)| (k.0.clone(), from_nbt(v))).collect()),
+        Tag::Compound(c) => Json::Obj(c.iter().map(|(k, v)| (k.0.to_vec(), from_nbt(v))).collect()),
     }
 }
 

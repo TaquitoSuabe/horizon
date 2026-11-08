@@ -500,7 +500,7 @@ fn sign_text_strict_json(cx: &mut Cx) {
         for line in ["Text1", "Text2", "Text3", "Text4"] {
             if let Some(Tag::String(text)) = be.get(line) {
                 let fixed = rewrite_from_lenient(&text.0);
-                set(be, line, Tag::String(JavaString(fixed)));
+                set(be, line, Tag::String(JavaString(fixed.into())));
             }
         }
     });
@@ -517,7 +517,7 @@ fn written_book_pages_strict_json(cx: &mut Cx) {
             if pages.iter().all(|p| matches!(p, Tag::String(_))) {
                 for page in pages {
                     if let Tag::String(text) = page {
-                        *text = JavaString(rewrite_from_lenient(&text.0));
+                        *text = JavaString(rewrite_from_lenient(&text.0).into());
                     }
                 }
             }

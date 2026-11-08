@@ -112,7 +112,9 @@ fn fix_sign_text(t: &mut Tag) {
     }
     let filtered = stream(t.get("filtered_messages"));
     let lines = stream(t.get("messages"));
-    let empty = Tag::String(crate::nbt::JavaString(json::text_component_json(&[])));
+    let empty = Tag::String(crate::nbt::JavaString(
+        json::text_component_json(&[]).into(),
+    ));
     let new: Vec<Tag> = filtered
         .into_iter()
         .enumerate()

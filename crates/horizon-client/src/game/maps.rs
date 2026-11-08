@@ -2048,8 +2048,8 @@ mod tests {
     fn named_map_targets_are_added_once_without_replacing_other_targets() {
         let mut map = MapData::fresh(0.0, 0.0, 0, "minecraft:overworld");
         let target = |key: JavaString, x| (key, "map/decorations/red_x", x, 30.0, 180.0);
-        let first_key = JavaString(vec![0xd800]);
-        let second_key = JavaString(vec![0xd801]);
+        let first_key = JavaString(vec![0xd800].into());
+        let second_key = JavaString(vec![0xd801].into());
         map.add_item_decorations(vec![target(first_key.clone(), 20.0)], 0);
         map.add_item_decorations(vec![target(first_key, 40.0), target(second_key, 25.0)], 1);
         assert_eq!(map.decorations.len(), 2);

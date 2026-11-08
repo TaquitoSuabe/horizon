@@ -596,7 +596,10 @@ mod tests {
                             [(JavaString::from("value"), Tag::String("bad".into()))].into(),
                         ),
                     ),
-                    (JavaString(vec![0xd800]), Tag::Compound(Compound::new())),
+                    (
+                        JavaString(vec![0xd800].into()),
+                        Tag::Compound(Compound::new()),
+                    ),
                 ]
                 .into(),
             ),
